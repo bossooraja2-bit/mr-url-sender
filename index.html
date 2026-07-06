@@ -447,7 +447,7 @@ async function sendOne() {
   b.disabled = true; b.innerHTML = '<span class="spin"></span> Sending...';
   var r = await doSend(devId, Object.assign({}, data, { deviceId: devId }));
   incStat(r.ok);
-  appendResult([{ n: 1, name: devId, deviceId: devId, appId: curApp||'', ok: r.ok, status: r.status, msg: r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) }]);
+  appendResult([{ n: 1, name: devId, deviceId: devId, appId: curApp||'', ok: r.ok, status: r.status, msg: r.data.name || r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) }]);
   b.disabled = false; b.innerHTML = '&#128241; Send to Selected';
 }
 
@@ -455,7 +455,7 @@ async function qSend(devId) {
   var data = getPayload(); if (!data) return;
   var r = await doSend(devId, Object.assign({}, data, { deviceId: devId }));
   incStat(r.ok);
-  appendResult([{ n: '!', name: devId, deviceId: devId, appId: curApp||'', ok: r.ok, status: r.status, msg: r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) }]);
+  appendResult([{ n: '!', name: devId, deviceId: devId, appId: curApp||'', ok: r.ok, status: r.status, msg: r.data.name || r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) }]);
 }
 
 async function sendAll() {
@@ -481,7 +481,7 @@ async function sendAll() {
     var r = await doSend(d.deviceId, Object.assign({}, data, { deviceId: d.deviceId }));
     incStat(r.ok);
     results.push({ n: i+1, name: d.name, deviceId: d.deviceId, appId: d.appId,
-      ok: r.ok, status: r.status, msg: r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) });
+      ok: r.ok, status: r.status, msg: r.data.name || r.data.messageId || r.data.error || JSON.stringify(r.data).slice(0,60) });
   }
 
   pb.style.width = '100%';
