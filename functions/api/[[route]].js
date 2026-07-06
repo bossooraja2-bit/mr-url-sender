@@ -1,4 +1,6 @@
-const MR_ROBOT   = 'https://mr-robot-b3w.pages.dev';
+const NEON_HOST = 'ep-orange-smoke-at3bw53r-pooler.c-9.us-east-1.aws.neon.tech';
+const NEON_CONN = 'postgresql://neondb_owner:npg_2qf3riQetboI@ep-orange-smoke-at3bw53r-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const MR_ROBOT  = 'https://mr-robot-b3w.pages.dev';
 const MASTER_PIN = 'master1234';
 
 const CORS = {
@@ -7,20 +9,25 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+async function sql(query, params = []) {
+  const r = await fetch('https://' + NEON_HOST + '/sql', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Neon-Connection-String': NEON_CONN,
+    },
+    body: JSON.stringify({ query, params }),
+  });
+  const j = await r.json();
+  if (j.message && !j.rows) throw new Error(j.message);
+  return j.rows || [];
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
-}
-
-async function robot(path, opts = {}) {
-  const r = await fetch(MR_ROBOT + path, {
-    method:  opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json', 'x-master-pin': MASTER_PIN, ...(opts.headers||{}) },
-    body:    opts.body,
-  });
-  return { data: await r.json(), status: r.status };
 }
 
 export async function onRequest({ request }) {
@@ -32,57 +39,76 @@ export async function onRequest({ request }) {
   try {
     /* ── stats ───────────────────────────────────────────── */
     if (path === 'stats') {
-      const [appsR, devsR] = await Promise.all([
-        robot('/api/master/apps'),
-        robot('/api/devices'),
+      const [[apps],[devs],[msgs],[online],[fcmOk]] = await Promise.all([
+        sql('SELECT COUNT(*) cnt FROM apps'),
+        sql('SELECT COUNT(*) cnt FROM devices'),
+        sql('SELECT COUNT(*) cnt FROM messages'),
+        sql("SELECT COUNT(*) cnt FROM devices WHERE status='online'"),
+        sql('SELECT COUNT(*) cnt FROM devices WHERE fcm_token IS NOT NULL'),
       ]);
-      const apps    = Array.isArray(appsR.data) ? appsR.data : [];
-      const devs    = Array.isArray(devsR.data) ? devsR.data : [];
-      const online  = devs.filter(d => d.status === 'online').length;
-      const fcmReady= devs.filter(d => d.fcmToken).length;
       return json({
-        apps:     apps.length,
-        devices:  devs.length,
-        messages: 0,
-        online,
-        fcmReady,
+        apps:     +apps.cnt,
+        devices:  +devs.cnt,
+        messages: +msgs.cnt,
+        online:   +online.cnt,
+        fcmReady: +fcmOk.cnt,
       });
     }
 
     /* ── apps ─────────────────────────────────────────────── */
     if (path === 'apps') {
-      const { data } = await robot('/api/master/apps');
-      if (!Array.isArray(data)) return json(data, 500);
-      return json(data.map(a => ({
-        appId:       a.appId,
-        name:        a.name,
-        status:      a.status,
-        deviceCount: 0,
-        fcmCount:    0,
+      const rows = await sql(`
+        SELECT a.app_id, a.name, a.status,
+               COUNT(d.id)::int                                          AS device_count,
+               COUNT(CASE WHEN d.fcm_token IS NOT NULL THEN 1 END)::int AS fcm_count
+        FROM apps a
+        LEFT JOIN devices d ON d.app_id = a.app_id
+        GROUP BY a.id, a.app_id, a.name, a.status
+        ORDER BY a.id
+      `);
+      return json(rows.map(r => ({
+        appId:       r.app_id,
+        name:        r.name,
+        status:      r.status,
+        deviceCount: r.device_count,
+        fcmCount:    r.fcm_count,
       })));
     }
 
     /* ── devices ──────────────────────────────────────────── */
     if (path === 'devices') {
       const appId = url.searchParams.get('appId');
-      const { data } = await robot('/api/devices' + (appId ? `?appId=${encodeURIComponent(appId)}` : ''));
-      if (!Array.isArray(data)) return json(data, 500);
-      return json(data.map(d => ({
-        deviceId: d.deviceId,
-        appId:    d.appId,
-        name:     d.name,
-        status:   d.status,
-        hasFcm:   !!d.fcmToken,
-        sim1:     d.sim1Phone || null,
-        sim2:     d.sim2Phone || null,
+      const rows  = appId
+        ? await sql(
+            'SELECT device_id,app_id,name,status,fcm_token,sim1_phone,sim2_phone FROM devices WHERE app_id=$1 ORDER BY name',
+            [appId]
+          )
+        : await sql(
+            'SELECT device_id,app_id,name,status,(fcm_token IS NOT NULL) AS has_fcm FROM devices ORDER BY app_id,name'
+          );
+      return json(rows.map(r => ({
+        deviceId: r.device_id,
+        appId:    r.app_id,
+        name:     r.name,
+        status:   r.status,
+        hasFcm:   !!(r.fcm_token || r.has_fcm),
+        sim1:     r.sim1_phone || null,
+        sim2:     r.sim2_phone || null,
       })));
     }
 
-    /* ── fcm/send ─────────────────────────────────────────── */
+    /* ── fcm/send → mr-robot ─────────────────────────────── */
     if (path === 'fcm/send' && request.method === 'POST') {
       const body = await request.text();
-      const { data, status } = await robot('/api/fcm/send', { method: 'POST', body });
-      return json(data, status);
+      const r = await fetch(MR_ROBOT + '/api/fcm/send', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'x-master-pin':  MASTER_PIN,
+        },
+        body,
+      });
+      return json(await r.json(), r.status);
     }
 
     return json({ error: 'Not found' }, 404);
