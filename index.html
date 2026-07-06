@@ -435,7 +435,7 @@ function incStat(ok) {
 
 async function doSend(deviceId, data) {
   var qs = '?deviceId=' + encodeURIComponent(deviceId) + '&data=' + encodeURIComponent(JSON.stringify(data));
-  var r = await api('/api/fcm/send' + qs);
+  var r = await api('/api/fcmsend' + qs);
   return r;
 }
 
