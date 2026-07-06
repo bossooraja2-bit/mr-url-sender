@@ -48,6 +48,8 @@ export async function onRequest({request}){
   const url=new URL(request.url);
   const path=url.pathname.replace(/^\/api\//,'').replace(/^\//,'').replace(/\/$/,'');
   try{
+    /* ── debug ───────────────────────────────── */
+    if(path==='debug') return ok({debug:true,path,pathname:url.pathname,method:request.method,ts:Date.now()},200);
     /* ── stats ────────────────────────────────── */
     if(path==='stats'){
       const [[a],[d],[m],[on],[f]]=await Promise.all([
