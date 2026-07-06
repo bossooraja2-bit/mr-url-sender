@@ -434,10 +434,8 @@ function incStat(ok) {
 }
 
 async function doSend(deviceId, data) {
-  var r = await api('/api/fcm/send', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId: deviceId, data: data }),
-  });
+  var qs = '?deviceId=' + encodeURIComponent(deviceId) + '&data=' + encodeURIComponent(JSON.stringify(data));
+  var r = await api('/api/fcm/send' + qs);
   return r;
 }
 
