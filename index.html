@@ -359,7 +359,7 @@ function addRow(k, v, isObj) {
     '<input type="text" placeholder="key" value="' + k.replace(/"/g,'&quot;') + '" oninput="rows[' + id + '].key=this.value;preview()"/>'
     + '<button class="type-btn' + (isObj?' obj':'') + '" id="tb' + id + '" onclick="togT(' + id + ')">' + (isObj ? '{}' : 'TXT') + '</button>'
     + '<input type="text" placeholder="' + (isObj ? 'paste JSON' : 'value') + '" value="' + (isObj ? '' : v.replace(/"/g,'&quot;')) + '" id="vi' + id + '" oninput="rows[' + id + '].val=this.value;preview()" style="' + (isObj?'display:none':'') + '"/>'
-    + '<textarea placeholder='{"k":"v"}' id="vo' + id + '" oninput="rows[' + id + '].val=this.value;preview()" rows="2" style="font-size:11px;' + (isObj?'':'display:none') + '">' + (isObj ? v : '') + '</textarea>'
+    + '<textarea placeholder='{\"k\":\"v\"}' id="vo' + id + '" oninput="rows[' + id + '].val=this.value;preview()" rows="2" style="font-size:11px;' + (isObj?'':'display:none') + '">' + (isObj ? v : '') + '</textarea>'
     + '<button class="del-btn" onclick="delRow(' + id + ')">&times;</button>';
   c.appendChild(d);
   preview();
