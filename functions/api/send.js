@@ -9,10 +9,11 @@ async function neon(q,p=[]){
   const r=await fetch('https://'+NEON_HOST+'/sql',{method:'POST',headers:{'Content-Type':'application/json','Neon-Connection-String':NEON_CONN},body:JSON.stringify({query:q,params:p})});
   const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||JSON.stringify(j));return j.rows||[];
 }
-
-function b64u(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+function b64u(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
 function pemBytes(pem){
-  const b64=pem.replace(/-----[^-]+-----/g,'').replace(/[\\n\r]/g,'').replace(/\s/g,'');
+  const b64=pem.replace(/-----[^-]+-----/g,'').replace(/\s/g,'');
   return Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
 }
 async function googleToken(){
@@ -28,7 +29,6 @@ async function googleToken(){
   if(!tj.access_token)throw new Error('FCM auth: '+JSON.stringify(tj));
   return tj.access_token;
 }
-
 export async function onRequest({request}){
   if(request.method==='OPTIONS')return new Response(null,{headers:CORS});
   const url=new URL(request.url);
