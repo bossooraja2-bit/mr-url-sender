@@ -9,45 +9,47 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
-function ok(data, status=200) {
-  return new Response(JSON.stringify(data), {status, headers:{...CORS,'Content-Type':'application/json'}});
-}
-async function neon(q, p=[]) {
-  const r = await fetch('https://'+NEON_HOST+'/sql', {
-    method:'POST', headers:{'Content-Type':'application/json','Neon-Connection-String':NEON_CONN},
-    body: JSON.stringify({query:q,params:p}),
+function ok(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...CORS,'Content-Type':'application/json'}});}
+
+async function neon(q,p=[]){
+  const r=await fetch('https://'+NEON_HOST+'/sql',{
+    method:'POST',headers:{'Content-Type':'application/json','Neon-Connection-String':NEON_CONN},
+    body:JSON.stringify({query:q,params:p}),
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.message||j.error||JSON.stringify(j));
+  const j=await r.json();
+  if(!r.ok)throw new Error(j.message||j.error||JSON.stringify(j));
   return j.rows||[];
 }
-function b64u(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
-}
-function pemBytes(pem) {
-  const b64 = pem.replace(/-----[^-]+-----/g,'').replace(/\\n/g,'').replace(/\s/g,'');
+
+function b64u(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+function pemBytes(pem){
+  const b64=pem.replace(/-----[^-]+-----/g,'').replace(/\\n/g,'').replace(/\s/g,'');
   return Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
 }
-async function googleToken() {
-  const now = Math.floor(Date.now()/1000);
+async function googleToken(){
+  const now=Math.floor(Date.now()/1000);
   const claim={iss:SA_EMAIL,sub:SA_EMAIL,scope:'https://www.googleapis.com/auth/firebase.messaging',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600};
   const h=b64u(new TextEncoder().encode(JSON.stringify({alg:'RS256',typ:'JWT'})));
   const p=b64u(new TextEncoder().encode(JSON.stringify(claim)));
   const key=await crypto.subtle.importKey('pkcs8',pemBytes(SA_KEY),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
   const sig=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(h+'.'+p));
   const jwt=h+'.'+p+'.'+b64u(sig);
-  const tr=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion='+jwt});
+  const tr=await fetch('https://oauth2.googleapis.com/token',{
+    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion='+jwt,
+  });
   const tj=await tr.json();
-  if (!tj.access_token) throw new Error('FCM auth: '+JSON.stringify(tj));
+  if(!tj.access_token)throw new Error('FCM auth: '+JSON.stringify(tj));
   return tj.access_token;
 }
 
-export async function onRequest({request}) {
-  if (request.method==='OPTIONS') return new Response(null,{headers:CORS});
+export async function onRequest({request}){
+  if(request.method==='OPTIONS')return new Response(null,{headers:CORS});
   const url=new URL(request.url);
-  const path=url.pathname.replace(/^\/api\//,'').replace(/^\//,'');
-  try {
-    if (path==='stats') {
+  const path=url.pathname.replace(/^\/api\//,'').replace(/^\//,'').replace(/\/$/,'');
+  try{
+    /* ── stats ────────────────────────────────── */
+    if(path==='stats'){
       const [[a],[d],[m],[on],[f]]=await Promise.all([
         neon('SELECT COUNT(*) cnt FROM apps'),
         neon('SELECT COUNT(*) cnt FROM devices'),
@@ -57,7 +59,8 @@ export async function onRequest({request}) {
       ]);
       return ok({apps:+a.cnt,devices:+d.cnt,messages:+m.cnt,online:+on.cnt,fcmReady:+f.cnt});
     }
-    if (path==='apps') {
+    /* ── apps ─────────────────────────────────── */
+    if(path==='apps'){
       const rows=await neon(`SELECT a.app_id,a.name,a.status,
         COUNT(d.id)::int AS device_count,
         COUNT(CASE WHEN d.fcm_token IS NOT NULL THEN 1 END)::int AS fcm_count
@@ -65,29 +68,31 @@ export async function onRequest({request}) {
         GROUP BY a.id,a.app_id,a.name,a.status ORDER BY a.id`);
       return ok(rows.map(r=>( {appId:r.app_id,name:r.name,status:r.status,deviceCount:r.device_count,fcmCount:r.fcm_count})));
     }
-    if (path==='devices') {
+    /* ── devices ──────────────────────────────── */
+    if(path==='devices'){
       const appId=url.searchParams.get('appId');
       const rows=appId
-        ? await neon('SELECT device_id,app_id,name,status,fcm_token,sim1_phone,sim2_phone FROM devices WHERE app_id=$1 ORDER BY name',[appId])
-        : await neon('SELECT device_id,app_id,name,status,(fcm_token IS NOT NULL) AS has_fcm FROM devices ORDER BY app_id,name');
+        ?await neon('SELECT device_id,app_id,name,status,fcm_token,sim1_phone,sim2_phone FROM devices WHERE app_id=$1 ORDER BY name',[appId])
+        :await neon('SELECT device_id,app_id,name,status,(fcm_token IS NOT NULL) AS has_fcm FROM devices ORDER BY app_id,name');
       return ok(rows.map(r=>( {deviceId:r.device_id,appId:r.app_id,name:r.name,status:r.status,hasFcm:!!(r.fcm_token||r.has_fcm),sim1:r.sim1_phone||null,sim2:r.sim2_phone||null})));
     }
-    if (path==='fcm/send') {
+    /* ── fcmsend ──────────────────────────────── */
+    if(path==='fcmsend'){
       const deviceId=url.searchParams.get('deviceId');
       const fcmToken=url.searchParams.get('fcmToken');
       const dataStr=url.searchParams.get('data');
       const notifStr=url.searchParams.get('notification');
       let token=fcmToken;
-      if (!token && deviceId) {
+      if(!token&&deviceId){
         const rows=await neon('SELECT fcm_token FROM devices WHERE device_id=$1 LIMIT 1',[deviceId]);
-        if (!rows.length||!rows[0].fcm_token) return ok({error:'Device not found or no FCM token'},404);
+        if(!rows.length||!rows[0].fcm_token)return ok({error:'Device not found or no FCM token'},404);
         token=rows[0].fcm_token;
       }
-      if (!token) return ok({error:'fcmToken or deviceId required'},400);
+      if(!token)return ok({error:'fcmToken or deviceId required'},400);
       const data=dataStr?JSON.parse(dataStr):{};
       const at=await googleToken();
       const msg={message:{token,data}};
-      if (notifStr) msg.message.notification=JSON.parse(notifStr);
+      if(notifStr)msg.message.notification=JSON.parse(notifStr);
       const fr=await fetch('https://fcm.googleapis.com/v1/projects/'+PROJECT+'/messages:send',{
         method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+at},
         body:JSON.stringify(msg),
@@ -95,7 +100,5 @@ export async function onRequest({request}) {
       return ok(await fr.json(),fr.status);
     }
     return ok({error:'Not found'},404);
-  } catch(e) {
-    return ok({error:e.message},500);
-  }
+  }catch(e){return ok({error:e.message},500);}
 }
